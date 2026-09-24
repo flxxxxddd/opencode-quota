@@ -40,19 +40,24 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup src/tui.ts --format esm --dts --out-dir dist --clean --external @opentui/solid",
+    "build": "tsup src/tui.tsx --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/solid",
     "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build && npm run typecheck"
   },
   "engines": {
     "node": ">=18",
-    "opencode": ">=1.14.0"
+    "opencode": ">=2.0.0"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.14.0"
+    "@opencode/plugin": ">=2.0.16",
+    "@opentui/solid": ">=0.5.10"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.14.22",
+    "@opencode/plugin": "^2.0.16",
+    "@opencode/theme": "^2.0.16",
+    "@opentui/core": "^0.5.10",
+    "@opentui/solid": "^0.5.10",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3"

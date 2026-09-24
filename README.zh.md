@@ -42,12 +42,12 @@ Updated: Apr 27, 2:30 PM
 
 ## 安装
 
-在 `tui.json` 中添加插件：
+在 `~/.config/opencode/cli.json` 中添加插件（OpenCode V2）：
 
 ```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["@whosydd/opencode-quota"]
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": ["@whosydd/opencode-quota"]
 }
 ```
 
@@ -63,7 +63,7 @@ npm install
 npm run build
 ```
 
-然后在 `tui.json` 中使用 `dist/tui.js` 的绝对路径进行注册。
+然后将 `dist` 目录的绝对路径添加到 `~/.config/opencode/cli.json` 的 `plugins` 数组中。
 </details>
 
 ## 配置

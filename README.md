@@ -42,12 +42,12 @@ Updated: Apr 27, 2:30 PM
 
 ## Install
 
-Add the plugin to your `tui.json`:
+Add the plugin to `~/.config/opencode/cli.json` (OpenCode V2):
 
 ```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["@whosydd/opencode-quota"]
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": ["@whosydd/opencode-quota"]
 }
 ```
 
@@ -63,7 +63,7 @@ npm install
 npm run build
 ```
 
-Then register it in `tui.json` using the absolute path to `dist/tui.js`.
+Then add the absolute path to the `dist` directory to the `plugins` array in `~/.config/opencode/cli.json`.
 </details>
 
 ## Configuration

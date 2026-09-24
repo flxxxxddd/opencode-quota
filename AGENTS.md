@@ -23,7 +23,8 @@ No test suite exists yet. Verify by building and type-checking.
 
 ## Repository Layout
 
-- `src/tui.ts`: TUI plugin entrypoint. Registers slash commands, orchestrates provider calls, renders dialogs.
+- `src/tui.tsx`: TUI plugin entrypoint. Registers slash commands and orchestrates provider calls.
+- `src/quota-dialog.tsx`: Renders the quota dashboard and provider cards.
 - `src/config.ts`: Config loading from environment variables.
 - `src/opencode-auth.ts`: Shared auth resolution (JWT parsing, OAuth session reading, token expiry checks via `isAuthExpired`). All providers use this module instead of duplicating auth logic.
 - `src/opencode-go.ts`: HTML fetch + parse for OpenCode Go quota.
