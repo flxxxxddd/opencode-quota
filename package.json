@@ -40,7 +40,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup src/tui.tsx --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/solid",
+    "build": "tsup src/tui.tsx --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/solid --external solid-js",
+    "dev": "npm run build && node scripts/dev.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build && npm run typecheck"
@@ -51,13 +52,15 @@
   },
   "peerDependencies": {
     "@opencode/plugin": ">=2.0.16",
-    "@opentui/solid": ">=0.5.10"
+    "@opentui/solid": ">=0.5.10",
+    "solid-js": ">=1.9.0"
   },
   "devDependencies": {
     "@opencode/plugin": "^2.0.16",
     "@opencode/theme": "^2.0.16",
     "@opentui/core": "^0.5.10",
     "@opentui/solid": "^0.5.10",
+    "solid-js": "^1.9.0",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3"

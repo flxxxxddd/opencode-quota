@@ -1,6 +1,7 @@
 import type { GitHubCopilotSnapshot } from "./github-copilot.js"
 import type { OpenAISnapshot } from "./openai.js"
 import type { OpenCodeGoSnapshot } from "./opencode-go.js"
+import type { KimiSnapshot } from "./kimi.js"
 
 export type QuotaWindowView = {
   label: string
@@ -12,8 +13,10 @@ export type QuotaWindowView = {
 export type QuotaProviderView = {
   title: string
   subtitle?: string
+  account?: string
   windows: QuotaWindowView[]
   notes?: string[]
+  reset?: { account: string; count: number; credits: Array<{ id: string; title: string; expiresAt?: number }> }
 }
 
 export function openCodeGoView(snapshot: OpenCodeGoSnapshot): QuotaProviderView {
@@ -55,7 +58,7 @@ export function copilotView(snapshot: GitHubCopilotSnapshot): QuotaProviderView 
   }
 }
 
-export function openAIView(snapshot: OpenAISnapshot): QuotaProviderView {
+export function openAIView(snapshot: OpenAISnapshot, account?: string): QuotaProviderView {
   const plan = snapshot.label.match(/^OpenAI\s*\((.+)\)$/i)?.[1]
   const windows: QuotaWindowView[] = []
 
@@ -73,7 +76,18 @@ export function openAIView(snapshot: OpenAISnapshot): QuotaProviderView {
   add(snapshot.windows.secondary)
   add(snapshot.windows.codeReview)
 
-  return { title: "OpenAI", ...(plan ? { subtitle: plan } : {}), windows }
+  return {
+    title: "OpenAI",
+    subtitle: plan,
+    account: account ?? snapshot.email,
+    windows,
+    ...(snapshot.resetCount !== undefined && account ? { reset: { account, count: snapshot.resetCount, credits: snapshot.resetCredits ?? [] } } : {}),
+    ...(snapshot.resetError ? { notes: [snapshot.resetError] } : {}),
+  }
+}
+
+export function kimiView(snapshot: KimiSnapshot): QuotaProviderView {
+  return { title: "Kimi Code", subtitle: snapshot.plan, account: snapshot.name, windows: snapshot.windows }
 }
 
 function friendlyWindowLabel(label: string): string {
@@ -82,7 +96,7 @@ function friendlyWindowLabel(label: string): string {
 
   const unit = { h: "hour", d: "day", m: "minute" }[match[2]!.toLowerCase()]!
   const count = Number(match[1])
-  return `${count}-${unit}${count === 1 ? "" : "s"} window`
+  return `${count}-${unit} limit`
 }
 
 function clampPercent(value: number): number {

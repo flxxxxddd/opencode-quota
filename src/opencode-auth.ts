@@ -5,6 +5,7 @@ import { join } from "node:path"
 export type OpenAIOAuthData = {
   type: string
   access?: string
+  key?: string
   refresh?: string
   expires?: number
   accountId?: string
@@ -26,6 +27,8 @@ export type AuthData = {
   codex?: OpenAIOAuthData
   chatgpt?: OpenAIOAuthData
   opencode?: OpenAIOAuthData
+  "kimi-coding"?: OpenAIOAuthData
+  kimi?: OpenAIOAuthData
 }
 
 const AUTH_CACHE_MAX_AGE_MS = 5_000
@@ -118,6 +121,28 @@ export async function readAuthFileCached(params?: { maxAgeMs?: number }): Promis
   }
 }
 
+// Additional OpenCode auth files can be supplied for accounts that cannot coexist
+// in OpenCode's single-provider auth.json. Never write credentials to this plugin.
+export async function readAdditionalAuthFiles(): Promise<Array<{ name: string; auth: AuthData }>> {
+  const raw = process.env.OPENCODE_QUOTA_AUTH_FILES?.trim()
+  if (!raw) return []
+  let entries: unknown
+  try { entries = JSON.parse(raw) } catch { throw new Error("OPENCODE_QUOTA_AUTH_FILES must be a JSON array of file paths.") }
+  if (!Array.isArray(entries) || !entries.every((entry) => typeof entry === "string" && entry.trim())) {
+    throw new Error("OPENCODE_QUOTA_AUTH_FILES must be a JSON array of file paths.")
+  }
+  const result: Array<{ name: string; auth: AuthData }> = []
+  for (const path of new Set(entries as string[])) {
+    let content: string
+    try { content = await readFile(path, "utf-8") } catch { throw new Error(`Cannot read additional auth file: ${path}`) }
+    let auth: unknown
+    try { auth = JSON.parse(content) } catch { throw new Error(`Invalid JSON in additional auth file: ${path}`) }
+    if (!auth || typeof auth !== "object" || Array.isArray(auth)) throw new Error(`Invalid auth data in: ${path}`)
+    result.push({ name: path.split(/[\\/]/).pop() ?? path, auth: auth as AuthData })
+  }
+  return result
+}
+
 export type OpenAIResolvedAuth = {
   accessToken: string
   email?: string
@@ -146,6 +171,17 @@ export function resolveOpenAIAuth(auth: AuthData | null): OpenAIResolvedAuth {
     return { accessToken, email, accountId, expiresAt }
   }
 
+  return null
+}
+
+export function resolveKimiAuth(auth: AuthData | null): OpenAIResolvedAuth {
+  for (const key of ["kimi-coding", "kimi"] as const) {
+    const entry = auth?.[key]
+    if (!entry || (entry.type !== "oauth" && entry.type !== "api")) continue
+    const token = entry.type === "api" ? entry.key?.trim() : entry.access?.trim()
+    if (!token) continue
+    return { accessToken: token, expiresAt: entry.expires }
+  }
   return null
 }
 

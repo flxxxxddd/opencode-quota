@@ -1,8 +1,9 @@
 import type { Context } from "@opencode/plugin/tui/context"
 import type { JSX } from "@opentui/solid"
+import { createSignal } from "solid-js"
 import { formatResetCountdown, formatTimestamp, type QuotaProviderView, type QuotaWindowView } from "./format.js"
 
-const BAR_WIDTH = 22
+const BAR_WIDTH = 20
 
 export type QuotaDashboardData = {
   providers: QuotaProviderView[]
@@ -10,65 +11,95 @@ export type QuotaDashboardData = {
   fetchedAt: number
 }
 
-export function QuotaDialog(props: { context: Context; data: QuotaDashboardData }): JSX.Element {
+function short(text: string, length: number): string {
+  return text.length > length ? `${text.slice(0, length - 1)}…` : text
+}
+
+function tabName(provider: QuotaProviderView, providers: QuotaProviderView[]): string {
+  const same = providers.filter((item) => item.title === provider.title)
+  const name = provider.title === "GitHub Copilot" ? "Copilot" : provider.title === "Kimi Code" ? "Kimi" : provider.title
+  return same.length > 1 ? `${name} ${same.indexOf(provider) + 1}` : name
+}
+
+export function QuotaDialog(props: { context: Context; data: QuotaDashboardData; onReset: (account: string) => Promise<void> }): JSX.Element {
   const { context, data } = props
   const theme = context.theme
+  const total = data.providers.length + Number(data.errors.length > 0)
+  const [selected, setSelected] = createSignal(0)
+  const provider = () => data.providers[selected()]
+  const move = (offset: number) => setSelected((index) => (index + offset + total) % total)
 
   context.keymap.layer(() => ({
     mode: "global",
     priority: 100,
     commands: [
+      { id: "quota.close", title: "Close quota", bind: "escape", run: () => context.ui.dialog.clear() },
+      { id: "quota.previous", title: "Previous quota tab", bind: "left", run: () => { if (total > 1) move(-1) } },
+      { id: "quota.next", title: "Next quota tab", bind: "right", run: () => { if (total > 1) move(1) } },
       {
-        id: "quota.close",
-        title: "Close quota",
-        bind: "escape",
-        run: () => context.ui.dialog.clear(),
+        id: "quota.reset",
+        title: "Redeem OpenAI reset",
+        bind: "r",
+        run: () => {
+          const reset = provider()?.reset
+          if (reset?.credits.length) return props.onReset(reset.account)
+        },
       },
     ],
   }))
 
   return (
-    <box flexDirection="column" gap={1} paddingX={1} paddingY={1}>
-      <box flexDirection="row" justifyContent="space-between" alignItems="center">
-        <text fg={theme.text.base} attributes={1}>Quota</text>
-        <text fg={theme.text.muted}>ESC to close</text>
+    <box flexDirection="column" gap={1} paddingX={2} paddingY={1}>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={theme.text.base} attributes={1}>QUOTA</text>
+        <text fg={theme.text.muted}>{data.errors.length ? "!  " : ""}{total > 1 ? `${selected() + 1} / ${total}   ` : ""}Esc close</text>
       </box>
 
-      {data.providers.map((provider) => (
-        <box
-          flexDirection="column"
-          gap={1}
-          paddingX={1}
-          paddingY={1}
-          border={true}
-          borderColor={theme.border.base}
-        >
-          <box flexDirection="row" justifyContent="space-between" alignItems="center">
-            <text fg={theme.text.base} attributes={1}>{provider.title}</text>
-            {provider.subtitle ? <text fg={theme.text.muted}>{provider.subtitle}</text> : null}
-          </box>
-
-          {provider.windows.map((window) => (
-            <QuotaWindow context={context} window={window} />
-          ))}
-
-          {provider.notes?.map((note) => (
-            <text fg={theme.text.feedback.warning.base}>{note}</text>
-          ))}
-        </box>
-      ))}
-
-      {data.errors.length > 0 ? (
-        <box flexDirection="column" gap={1} paddingX={1}>
-          <text fg={theme.text.feedback.warning.base} attributes={1}>Some providers could not be updated</text>
-          {data.errors.map((error) => <text fg={theme.text.muted}>• {error}</text>)}
+      {total > 1 ? (
+        <box flexDirection="row" gap={1}>
+          <text fg={theme.text.muted}>‹</text>
+          {data.providers.map((item, index) => Math.abs(index - selected()) <= 1 ? (
+            <text fg={selected() === index ? theme.text.base : theme.text.muted} attributes={selected() === index ? 1 : 0}>
+              {selected() === index ? `[ ${tabName(item, data.providers)} ]` : `  ${tabName(item, data.providers)}  `}
+            </text>
+          ) : null)}
+          {data.errors.length && Math.abs(data.providers.length - selected()) <= 1 ? (
+            <text fg={selected() === data.providers.length ? theme.text.feedback.warning.base : theme.text.muted}>
+              {selected() === data.providers.length ? "[ Issues ]" : "  Issues  "}
+            </text>
+          ) : null}
+          <text fg={theme.text.muted}>›</text>
         </box>
       ) : null}
 
-      <box flexDirection="row" justifyContent="space-between">
-        <text fg={theme.text.muted}>Updated {formatTimestamp(data.fetchedAt)}</text>
-        <text fg={theme.text.muted}>Fresh data · Esc to close</text>
-      </box>
+      {provider() ? (
+        <box flexDirection="column" gap={1} paddingX={1} paddingY={1} border borderColor={theme.border.base}>
+          <box flexDirection="row" gap={1}>
+            <text fg={theme.text.base} attributes={1}>{provider()!.title}</text>
+            {provider()!.subtitle ? <text fg={theme.text.muted}>· {short(provider()!.subtitle!, 18)}</text> : null}
+          </box>
+          {provider()!.account ? <text fg={theme.text.muted}>{short(provider()!.account!, 52)}</text> : null}
+
+          {provider()!.windows.map((window) => <QuotaWindow context={context} window={window} />)}
+
+          {provider()!.reset ? (
+            <box flexDirection="column" gap={0} paddingTop={1}>
+              <text fg={theme.text.base}>Saved resets  {provider()!.reset!.count} available{provider()!.reset!.credits.length ? "  ·  R to use" : ""}</text>
+              {provider()!.reset!.credits[0]?.expiresAt ? (
+                <text fg={theme.text.muted}>Next expires {formatTimestamp(provider()!.reset!.credits[0]!.expiresAt!)}</text>
+              ) : null}
+            </box>
+          ) : null}
+          {provider()!.notes?.map((note) => <text fg={theme.text.feedback.warning.base}>{short(note, 66)}</text>)}
+        </box>
+      ) : (
+        <box flexDirection="column" gap={1} paddingX={1} paddingY={1} border borderColor={theme.border.base}>
+          <text fg={theme.text.feedback.warning.base} attributes={1}>Could not load some accounts</text>
+          {data.errors.map((error) => <text fg={theme.text.muted}>• {short(error, 66)}</text>)}
+        </box>
+      )}
+
+      <text fg={theme.text.muted}>{total > 1 ? "← → switch   ·   " : ""}Updated {formatTimestamp(data.fetchedAt)}</text>
     </box>
   )
 }
@@ -90,15 +121,14 @@ function QuotaWindow(props: { context: Context; window: QuotaWindowView }): JSX.
   return (
     <box flexDirection="column" gap={0}>
       <box flexDirection="row" justifyContent="space-between">
-        <text fg={theme.text.base}>{window.label}</text>
-        {countdown ? <text fg={theme.text.muted}>↻ {countdown}</text> : null}
-      </box>
-      <box flexDirection="row" gap={1}>
-        <text fg={color}>{"█".repeat(filledWidth)}</text>
-        <text fg={theme.background.raised.max}>{"░".repeat(BAR_WIDTH - filledWidth)}</text>
+        <text fg={theme.text.base}>{short(window.label, 30)}</text>
         <text fg={color} attributes={1}>{remaining}% left</text>
       </box>
-      {window.detail ? <text fg={theme.text.muted}>{window.detail}</text> : null}
+      <box flexDirection="row">
+        <text fg={color}>{"━".repeat(filledWidth)}</text>
+        <text fg={theme.text.muted}>{"─".repeat(BAR_WIDTH - filledWidth)}</text>
+      </box>
+      <text fg={theme.text.muted}>{countdown ? `Resets in ${countdown}` : "Reset time unavailable"}{window.detail ? `  ·  ${window.detail}` : ""}</text>
     </box>
   )
 }
