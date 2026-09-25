@@ -61,7 +61,9 @@ const plugin = Plugin.define({
           }
         }
         providers.push(...(await Promise.all(jobs)).filter((view): view is QuotaProviderView => view !== undefined))
-        return { providers, errors }
+        // RPC output is validated against the schema as strict JSON: strip
+        // undefined fields so optional view properties do not fail the call.
+        return JSON.parse(JSON.stringify({ providers, errors })) as { providers: QuotaProviderView[]; errors: string[] }
       },
       redeem: async (input) => {
         const { credentialID, creditID } = input as { credentialID: string; creditID: string }
