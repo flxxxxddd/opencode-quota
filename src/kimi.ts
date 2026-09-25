@@ -4,10 +4,28 @@ export type KimiSnapshot = {
   name: string
   plan?: string
   windows: Array<{ label: string; percentRemaining: number; resetAt?: number; detail?: string }>
+  notes?: string[]
 }
 
 type Row = { limit?: string | number; remaining?: string | number; used?: string | number; resetTime?: string }
-type Usage = { usage?: Row; limits?: Array<{ window?: { duration?: number; timeUnit?: string }; detail?: Row }>; user?: { membership?: { level?: string } } }
+type Ratio = { used_ratio?: number; reset_time?: string }
+type Usage = {
+  usage?: Row
+  limits?: Array<{ window?: { duration?: number; timeUnit?: string }; detail?: Row }>
+  usages?: { limit_5h?: Ratio; limit_month_total?: Ratio; limit_month_code?: Ratio }
+  user?: { membership?: { level?: string } }
+  booster_wallet?: { status?: string }
+}
+
+function windowFromRatio(ratio: Ratio | undefined, label: string): KimiSnapshot["windows"][number] | undefined {
+  if (!ratio || typeof ratio !== "object" || typeof ratio.used_ratio !== "number" || !Number.isFinite(ratio.used_ratio)) return undefined
+  const resetAt = ratio.reset_time ? Date.parse(ratio.reset_time) : NaN
+  return {
+    label,
+    percentRemaining: Math.max(0, Math.min(100, Math.round((1 - ratio.used_ratio) * 100))),
+    ...(Number.isFinite(resetAt) ? { resetAt } : {}),
+  }
+}
 
 function windowFromRow(row: Row | undefined, label: string): KimiSnapshot["windows"][number] | undefined {
   if (!row || typeof row !== "object") return undefined
@@ -37,6 +55,11 @@ export async function getKimiQuota(auth: NonNullable<OpenAIResolvedAuth>, name: 
   // New plans may have no weekly row. Don't invent a weekly limit.
   const weekly = windowFromRow(data.usage, "Weekly limit")
   if (weekly) windows.push(weekly)
+  // Newer API: membership monthly pools reported as used ratios.
+  const monthTotal = windowFromRatio(data.usages?.limit_month_total, "Monthly limit")
+  if (monthTotal) windows.push(monthTotal)
+  const monthCode = windowFromRatio(data.usages?.limit_month_code, "Monthly code limit")
+  if (monthCode && monthCode.percentRemaining !== monthTotal?.percentRemaining) windows.push(monthCode)
   for (const item of Array.isArray(data.limits) ? data.limits : []) {
     if (!item || typeof item !== "object") continue
     const duration = item.window?.duration
@@ -50,5 +73,7 @@ export async function getKimiQuota(auth: NonNullable<OpenAIResolvedAuth>, name: 
   }
   if (!windows.length) throw new Error(`Kimi (${name}) returned no recognizable quota windows.`)
   const level = data.user?.membership?.level
-  return { name, ...(level ? { plan: level.replace(/^LEVEL_/, "").toLowerCase() } : {}), windows }
+  const booster = data.booster_wallet?.status
+  const notes = booster && booster !== "STATUS_DISABLED" ? ["Extra usage wallet enabled"] : undefined
+  return { name, ...(level ? { plan: level.replace(/^LEVEL_/, "").toLowerCase() } : {}), windows, ...(notes ? { notes } : {}) }
 }

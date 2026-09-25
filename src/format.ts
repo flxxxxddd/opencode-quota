@@ -87,7 +87,7 @@ export function openAIView(snapshot: OpenAISnapshot, account?: string): QuotaPro
 }
 
 export function kimiView(snapshot: KimiSnapshot): QuotaProviderView {
-  return { title: "Kimi Code", subtitle: snapshot.plan, account: snapshot.name, windows: snapshot.windows }
+  return { title: "Kimi Code", subtitle: snapshot.plan, account: snapshot.name, windows: snapshot.windows, ...(snapshot.notes ? { notes: snapshot.notes } : {}) }
 }
 
 function friendlyWindowLabel(label: string): string {

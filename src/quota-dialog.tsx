@@ -34,8 +34,8 @@ export function QuotaDialog(props: { context: Context; data: QuotaDashboardData;
     priority: 100,
     commands: [
       { id: "quota.close", title: "Close quota", bind: "escape", run: () => context.ui.dialog.clear() },
-      { id: "quota.previous", title: "Previous quota tab", bind: "left", run: () => { if (total > 1) move(-1) } },
-      { id: "quota.next", title: "Next quota tab", bind: "right", run: () => { if (total > 1) move(1) } },
+      { id: "quota.previous", title: "Previous quota tab", bind: "left,h,shift+tab", run: () => { if (total > 1) move(-1) } },
+      { id: "quota.next", title: "Next quota tab", bind: "right,l,tab", run: () => { if (total > 1) move(1) } },
       {
         id: "quota.reset",
         title: "Redeem OpenAI reset",
@@ -46,6 +46,7 @@ export function QuotaDialog(props: { context: Context; data: QuotaDashboardData;
         },
       },
     ],
+    bindings: ["quota.close", "quota.previous", "quota.next", "quota.reset"],
   }))
 
   return (
@@ -99,7 +100,7 @@ export function QuotaDialog(props: { context: Context; data: QuotaDashboardData;
         </box>
       )}
 
-      <text fg={theme.text.muted}>{total > 1 ? "← → switch   ·   " : ""}Updated {formatTimestamp(data.fetchedAt)}</text>
+      <text fg={theme.text.muted}>{total > 1 ? "← → / h l switch   ·   " : ""}Updated {formatTimestamp(data.fetchedAt)}</text>
     </box>
   )
 }
