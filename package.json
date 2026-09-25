@@ -18,8 +18,8 @@
     "github-copilot",
     "ai"
   ],
-  "main": "./dist/tui.js",
-  "types": "./dist/tui.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "README.md",
@@ -28,19 +28,23 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/tui.js",
-      "types": "./dist/tui.d.ts"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     },
     "./tui": {
       "import": "./dist/tui.js",
       "types": "./dist/tui.d.ts"
+    },
+    "./rpc": {
+      "import": "./dist/rpc.js",
+      "types": "./dist/rpc.d.ts"
     }
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsup src/tui.tsx --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/solid --external solid-js",
+    "build": "tsup src/index.ts src/tui.tsx src/rpc.ts --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/solid --external solid-js",
     "dev": "npm run build && node scripts/dev.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",

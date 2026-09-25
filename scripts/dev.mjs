@@ -2,27 +2,29 @@ import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 
 const plugin = fileURLToPath(new URL("../dist/", import.meta.url))
-let inline = {}
 
-if (process.env.OPENCODE_CLI_CONFIG_CONTENT) {
+function parseInline(name) {
+  if (!process.env[name]) return {}
   try {
-    inline = JSON.parse(process.env.OPENCODE_CLI_CONFIG_CONTENT)
-    if (!inline || typeof inline !== "object" || Array.isArray(inline)) throw new Error("Expected a JSON object")
+    const value = JSON.parse(process.env[name])
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error()
+    return value
   } catch {
-    console.error("OPENCODE_CLI_CONFIG_CONTENT must be a JSON object.")
+    console.error(`${name} must be a JSON object.`)
     process.exit(1)
   }
 }
 
-// CLI plugin arrays replace the global list. This isolates the checkout from
-// an installed release, while leaving the user's cli.json untouched.
+// Load the server plugin (OAuth resolution + quota RPC) and the TUI plugin
+// from this checkout only, without touching the user's config files.
 const env = {
   ...process.env,
-  OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ ...inline, plugins: [plugin] }),
+  OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...parseInline("OPENCODE_CONFIG_CONTENT"), plugins: [plugin] }),
+  OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ ...parseInline("OPENCODE_CLI_CONFIG_CONTENT"), plugins: [plugin] }),
 }
 
 console.log(`Starting OpenCode with local quota plugin: ${plugin}`)
-console.log("Other cli.json plugins are disabled for this run; global settings are unchanged.")
+console.log("Other configured plugins are disabled for this run; global config files are unchanged.")
 const child = spawn("opencode", process.argv.slice(2), { stdio: "inherit", env })
 child.on("error", (error) => {
   console.error(`Could not start opencode: ${error.message}`)

@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
+import { QuotaRpc } from "./rpc.js"
 import { QuotaDialog, type QuotaDashboardData } from "./quota-dialog.js"
 import { loadOptionalOpenCodeGoConfig } from "./config.js"
 import {
@@ -9,11 +10,10 @@ import {
   openCodeGoView,
   type QuotaProviderView,
 } from "./format.js"
-import { getGitHubCopilotQuota } from "./github-copilot.js"
 import { getOpenAIQuota, listResetCredits, consumeResetCredit } from "./openai.js"
 import { getKimiQuota } from "./kimi.js"
 import { getOpenCodeGoQuota } from "./opencode-go.js"
-import { readAuthFileCached, readAdditionalAuthFiles, resolveOpenAIAuth, resolveCopilotAuth, resolveKimiAuth, type OpenAIResolvedAuth } from "./opencode-auth.js"
+import { readAdditionalAuthFiles, resolveOpenAIAuth, resolveKimiAuth, type OpenAIResolvedAuth } from "./opencode-auth.js"
 
 const plugin = Plugin.define({
   id: "whosydd.opencode-quota",
@@ -46,7 +46,7 @@ async function showQuotaDialog(context: Context): Promise<void> {
   context.ui.toast.show({ message: "Fetching quota…", variant: "info" })
 
   try {
-    const { data, accounts } = await buildQuotaDashboard()
+    const { data, accounts } = await buildQuotaDashboard(context)
     let resetBusy = false
     context.ui.dialog.set({ size: data.providers.length === 1 && data.errors.length === 0 ? "medium" : "large", centered: true })
     context.ui.dialog.show(() => <QuotaDialog context={context} data={data} onReset={async (account) => {
@@ -75,11 +75,15 @@ async function redeemReset(context: Context, data: QuotaDashboardData, accounts:
   const choice = await context.ui.dialog.select({ title: "Select saved reset", options })
   if (!choice) return
   const [name, id] = JSON.parse(choice) as [string, string]
+  const accountLabel = data.providers.find((provider) => provider.reset?.account === name)?.account ?? "OpenAI"
   const auth = accounts.get(name)
-  if (!auth) return
+  if (!auth) {
+    const provider = data.providers.find((item) => item.reset?.account === name)
+    if (!provider) return
+  }
   let selectedCredit: Awaited<ReturnType<typeof listResetCredits>>["credits"][number] | undefined
   try {
-    const current = await listResetCredits(auth)
+    const current = auth ? await listResetCredits(auth) : { credits: data.providers.find((item) => item.reset?.account === name)?.reset?.credits ?? [] }
     selectedCredit = current.credits.find((credit) => credit.id === id)
     if (!selectedCredit) {
       context.ui.toast.show({ message: "That reset is no longer available. Refresh /quota.", variant: "warning" })
@@ -91,12 +95,12 @@ async function redeemReset(context: Context, data: QuotaDashboardData, accounts:
   }
   const confirmed = await context.ui.dialog.confirm({
     title: "Spend 1 saved reset?",
-    message: `Account: ${name}\n${selectedCredit.title}${selectedCredit.expiresAt ? ` · expires ${new Date(selectedCredit.expiresAt).toLocaleString()}` : ""}\nThis is irreversible and may move your weekly reset date. Cancel keeps the reset.`,
+    message: `Account: ${accountLabel}\n${selectedCredit.title}${selectedCredit.expiresAt ? ` · expires ${new Date(selectedCredit.expiresAt).toLocaleString()}` : ""}\nThis is irreversible and may move your weekly reset date. Cancel keeps the reset.`,
     label: { confirm: "Yes, spend reset", cancel: "Keep reset" },
   })
   if (!confirmed) return
   try {
-    const message = await consumeResetCredit(auth, id)
+    const message = auth ? await consumeResetCredit(auth, id) : ((await context.client.rpc(QuotaRpc).redeem({ credentialID: name, creditID: id })) as { message: string }).message
     context.ui.toast.show({ message, variant: "success" })
     await showQuotaDialog(context)
   } catch (error) {
@@ -104,7 +108,7 @@ async function redeemReset(context: Context, data: QuotaDashboardData, accounts:
   }
 }
 
-async function buildQuotaDashboard(): Promise<{ data: QuotaDashboardData; accounts: Map<string, NonNullable<OpenAIResolvedAuth>> }> {
+async function buildQuotaDashboard(context: Context): Promise<{ data: QuotaDashboardData; accounts: Map<string, NonNullable<OpenAIResolvedAuth>> }> {
   const tasks: Array<Promise<QuotaProviderView>> = []
   const errors: string[] = []
   const accounts = new Map<string, NonNullable<OpenAIResolvedAuth>>()
@@ -118,19 +122,15 @@ async function buildQuotaDashboard(): Promise<{ data: QuotaDashboardData; accoun
   }
 
   try {
-    const auth = await readAuthFileCached()
-    const hasOAuthCopilot = resolveCopilotAuth(auth) !== null
-
-    if (hasOAuthCopilot) {
-      tasks.push(getGitHubCopilotQuota().then(copilotView))
-    }
-  } catch (error) {
-    errors.push(errorMessage(error))
+    const snapshot = await context.client.rpc(QuotaRpc).snapshot({}) as { providers: QuotaProviderView[]; errors: string[] }
+    for (const provider of snapshot.providers) tasks.push(Promise.resolve(provider as QuotaProviderView))
+    errors.push(...snapshot.errors)
+  } catch {
+    errors.push("V2 quota service unavailable. Configure the quota plugin in opencode.jsonc and restart OpenCode.")
   }
 
   try {
-    const sources: Array<{ name: string; auth: Awaited<ReturnType<typeof readAuthFileCached>> }> = [{ name: "OpenCode", auth: await readAuthFileCached() }]
-    try { sources.push(...await readAdditionalAuthFiles()) } catch (error) { errors.push(errorMessage(error)) }
+    const sources = await readAdditionalAuthFiles()
     for (const source of sources) {
       const openai = resolveOpenAIAuth(source.auth)
       if (openai) {

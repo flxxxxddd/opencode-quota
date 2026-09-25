@@ -54,22 +54,22 @@ npm run dev
 
 In the newly opened TUI, run `/quota`. With multiple accounts, use **← / →** to switch tabs; fetch errors appear in an **Issues** tab. The launcher builds the current source and loads `dist/` for **this process only**. It does not edit global `cli.json`; for this test run it replaces the CLI plugin list so a published copy of this plugin cannot conflict. Other global settings remain in effect. Exit and run `npm run dev` again after code changes.
 
-To test additional accounts, set `OPENCODE_QUOTA_AUTH_FILES` or `OPENCODE_QUOTA_KIMI_KEYS` in the same shell before `npm run dev` (see [Configuration](#configuration)). OpenAI's primary account is read from OpenCode's existing `auth.json`. `/quota` only reads quota; pressing **R** does **not** redeem anything until you select a reset and confirm. To test the UI safely, cancel at the confirmation prompt.
+To test additional accounts, set `OPENCODE_QUOTA_AUTH_FILES` or `OPENCODE_QUOTA_KIMI_KEYS` in the same shell before `npm run dev` (see [Configuration](#configuration)). Accounts connected in OpenCode (`/connect`) are picked up automatically. `/quota` only reads quota; pressing **R** does **not** redeem anything until you select a reset and confirm. To test the UI safely, cancel at the confirmation prompt.
 
 If `/quota` is missing, check that `opencode --version` reports V2 and launch via `npm run dev` rather than an already-open TUI window.
 
 ### Install published version
 
-Add the plugin to `~/.config/opencode/cli.json` (OpenCode V2):
+Add the plugin to your global `~/.config/opencode/opencode.jsonc` (OpenCode V2). The server part resolves credentials, and its TUI component loads automatically — no separate `cli.json` entry is needed:
 
-```json
+```jsonc
 {
-  "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["@whosydd/opencode-quota"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@whosydd/opencode-quota"],
 }
 ```
 
-OpenCode Go is enabled when `OPENCODE_GO_WORKSPACE_ID` and `OPENCODE_GO_AUTH_COOKIE` are set. GitHub Copilot and OpenAI are detected from your OpenCode login session.
+OpenCode Go is enabled when `OPENCODE_GO_WORKSPACE_ID` and `OPENCODE_GO_AUTH_COOKIE` are set. GitHub Copilot, OpenAI (ChatGPT OAuth), and Kimi are detected from accounts connected in OpenCode V2 (`/connect` / `opencode auth login`). All saved accounts for these providers are shown — not just the active one.
 
 <details>
 <summary>Manual build (for developers)</summary>
@@ -81,7 +81,7 @@ npm install
 npm run build
 ```
 
-Then add the absolute path to the `dist` directory to the `plugins` array in `~/.config/opencode/cli.json`.
+Then add the absolute path to the repository's `dist` directory to the `plugins` array in `~/.config/opencode/opencode.jsonc`.
 </details>
 
 ## Configuration
@@ -95,13 +95,15 @@ export OPENCODE_GO_WORKSPACE_ID="wrk_your_workspace_id"
 export OPENCODE_GO_AUTH_COOKIE="Fe26.2**your_auth_cookie"
 ```
 
-GitHub Copilot and the primary OpenAI account reuse OpenCode's OAuth session. For additional OpenAI (or Kimi OAuth) accounts, point to separate OpenCode-format auth files:
+OpenCode V2 stores connected accounts in its own database. This plugin resolves them through the server-side integration API — it no longer reads `auth.json` for the main setup, so refreshed OAuth tokens and multiple saved accounts work automatically. The TUI never sees raw tokens: the server part fetches quotas and returns only view data.
+
+For accounts that cannot coexist in OpenCode (for example, a second ChatGPT login managed elsewhere), you can point to separate OpenCode-format auth files:
 
 ```bash
 export OPENCODE_QUOTA_AUTH_FILES='["/path/to/second/auth.json", "/path/to/third/auth.json"]'
 ```
 
-Each file should contain an `openai` OAuth entry (or `kimi-coding` / `kimi` for Kimi). OpenCode's own `auth.json` stores only one credential per provider; this plugin reads additional files but never changes them, refreshes their tokens, or switches OpenCode's active model account. Expired sessions must be renewed in the application that owns them. Keep these files private and out of the repository.
+Each file should contain an `openai` OAuth entry (or `kimi-coding` / `kimi` for Kimi). This plugin reads additional files but never changes them, refreshes their tokens, or switches OpenCode's active model account. Expired sessions must be renewed in the application that owns them. Keep these files private and out of the repository.
 
 Alternatively, supply Kimi Code **subscription** API keys (not Moonshot Open Platform keys) as named accounts:
 

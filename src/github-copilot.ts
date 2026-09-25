@@ -1,4 +1,4 @@
-import { readAuthFileCached, resolveCopilotAuth, isAuthExpired } from "./opencode-auth.js"
+import { readAuthFileCached, resolveCopilotAuth, isAuthExpired, type CopilotResolvedAuth } from "./opencode-auth.js"
 
 type GitHubCopilotQuotaSnapshot = {
   entitlement?: unknown
@@ -31,9 +31,8 @@ export type GitHubCopilotSnapshot = {
   source: "oauth-snapshot"
 }
 
-export async function getGitHubCopilotQuota(): Promise<GitHubCopilotSnapshot> {
-  const auth = await readAuthFileCached()
-  const resolved = resolveCopilotAuth(auth)
+export async function getGitHubCopilotQuota(account?: NonNullable<CopilotResolvedAuth>): Promise<GitHubCopilotSnapshot> {
+  const resolved = account ?? resolveCopilotAuth(await readAuthFileCached())
 
   if (!resolved) {
     throw new Error("GitHub Copilot is not configured. Log in to GitHub Copilot through OpenCode.")
