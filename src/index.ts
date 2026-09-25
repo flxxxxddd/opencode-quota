@@ -7,7 +7,7 @@ import { openAIView, copilotView, kimiView, type QuotaProviderView } from "./for
 import { resolveOpenAIAuth, type OpenAIResolvedAuth } from "./opencode-auth.js"
 
 const OPENAI_IDS = new Set(["openai", "codex", "chatgpt"])
-const KIMI_IDS = new Set(["kimi-coding", "kimi"])
+const KIMI_IDS = new Set(["kimi-coding", "kimi", "kimi-code-plan-global", "kimi-code-plan-cn"])
 
 const plugin = Plugin.define({
   id: "whosydd.opencode-quota",
@@ -38,7 +38,7 @@ const plugin = Plugin.define({
                   if (!auth) return undefined
                   const snapshot = await getOpenAIQuota(auth)
                   if (!snapshot) return undefined
-                  const view = openAIView(snapshot, connection.label)
+                  const view = openAIView(snapshot, auth.email ?? connection.label)
                   // The credential ID is an opaque selector, never an access token.
                   if (view.reset) view.reset.account = connection.id
                   return view
