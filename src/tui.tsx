@@ -42,14 +42,20 @@ const plugin = Plugin.define({
   },
 })
 
-async function showQuotaDialog(context: Context): Promise<void> {
+async function showQuotaDialog(context: Context, selected = 0): Promise<void> {
   context.ui.toast.show({ message: "Fetching quota…", variant: "info" })
 
   try {
     const { data, accounts } = await buildQuotaDashboard(context)
     let resetBusy = false
     context.ui.dialog.set({ size: data.providers.length === 1 && data.errors.length === 0 ? "medium" : "large", centered: true })
-    context.ui.dialog.show(() => <QuotaDialog context={context} data={data} onReset={async (account) => {
+    context.ui.dialog.show(() => <QuotaDialog context={context} data={data} selected={selected} onSelect={(index) => {
+      // Precompiled plugin JSX is static per mount, and the TUI does not
+      // repaint replaced dialog content. Close and reopen like a fresh /quota
+      // run instead (which does paint), fetching fresh data along the way.
+      context.ui.dialog.clear()
+      void showQuotaDialog(context, index)
+    }} onReset={async (account) => {
       if (resetBusy) return
       resetBusy = true
       try { await redeemReset(context, data, accounts, account) } finally { resetBusy = false }
