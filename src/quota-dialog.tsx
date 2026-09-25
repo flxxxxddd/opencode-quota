@@ -29,8 +29,10 @@ export function QuotaDialog(props: { context: Context; data: QuotaDashboardData;
   const provider = () => data.providers[selected()]
   const move = (offset: number) => setSelected((index) => (index + offset + total) % total)
 
+  // Custom dialogs run under the TUI's pushed "modal" input mode, so a
+  // "global" layer never matches while the dialog is open.
   context.keymap.layer(() => ({
-    mode: "global",
+    mode: "modal",
     priority: 100,
     commands: [
       { id: "quota.close", title: "Close quota", bind: "escape", run: () => context.ui.dialog.clear() },
@@ -60,14 +62,18 @@ export function QuotaDialog(props: { context: Context; data: QuotaDashboardData;
         <box flexDirection="row" gap={1}>
           <text fg={theme.text.muted}>‹</text>
           {data.providers.map((item, index) => Math.abs(index - selected()) <= 1 ? (
-            <text fg={selected() === index ? theme.text.base : theme.text.muted} attributes={selected() === index ? 1 : 0}>
-              {selected() === index ? `[ ${tabName(item, data.providers)} ]` : `  ${tabName(item, data.providers)}  `}
-            </text>
+            <box onMouseDown={() => setSelected(index)}>
+              <text fg={selected() === index ? theme.text.base : theme.text.muted} attributes={selected() === index ? 1 : 0}>
+                {selected() === index ? `[ ${tabName(item, data.providers)} ]` : `  ${tabName(item, data.providers)}  `}
+              </text>
+            </box>
           ) : null)}
           {data.errors.length && Math.abs(data.providers.length - selected()) <= 1 ? (
-            <text fg={selected() === data.providers.length ? theme.text.feedback.warning.base : theme.text.muted}>
-              {selected() === data.providers.length ? "[ Issues ]" : "  Issues  "}
-            </text>
+            <box onMouseDown={() => setSelected(data.providers.length)}>
+              <text fg={selected() === data.providers.length ? theme.text.feedback.warning.base : theme.text.muted}>
+                {selected() === data.providers.length ? "[ Issues ]" : "  Issues  "}
+              </text>
+            </box>
           ) : null}
           <text fg={theme.text.muted}>›</text>
         </box>
