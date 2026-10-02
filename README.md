@@ -34,6 +34,13 @@ its first two quota windows and the next reset. Click it or run `/quota` for
 the full dashboard. Stale snapshots are labeled; failed refreshes retain the
 last good snapshot rather than suggesting that quota disappeared.
 
+The **Quota sidebar** shows every configured service/account and all quota
+windows, in the same saved order, with remaining bars and reset countdowns.
+It uses exactly the HUD's snapshot and refresh schedule: rendering, scrolling
+and clicking loaded accounts do not make additional provider requests. Long
+account lists scroll within a bounded panel. Click an account for its cached
+dashboard tab; use **F** there to refresh. Toggle the panel in `/quota-settings`.
+
 - **← / →**, **H / L**, **Tab / Shift+Tab**: switch accounts instantly using the
   loaded snapshot; switching tabs does not make network requests.
 - **F / Ctrl+R**: fetch a fresh snapshot.

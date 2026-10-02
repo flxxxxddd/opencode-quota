@@ -1,6 +1,6 @@
 {
   "name": "@whosydd/opencode-quota",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "OpenCode V2 quota dashboard and HUD with multi-account usage, ordering and low-quota alerts.",
   "type": "module",
   "author": "GY <dev.youngkwok718@gmail.com>",

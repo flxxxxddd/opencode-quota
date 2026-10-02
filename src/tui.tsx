@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
 import { jsx } from "@opentui/solid/jsx-runtime"
+import { For, Show } from "solid-js"
 import { QuotaRpc } from "./rpc.js"
 import { QuotaDialog, type QuotaDashboardData } from "./quota-dialog.js"
 import { loadOptionalOpenCodeGoConfig } from "./config.js"
@@ -10,6 +11,7 @@ import {
   kimiView,
   openCodeGoView,
   formatHud,
+  formatSidebarWindow,
   quotaErrorMessage,
   type QuotaProviderView,
 } from "./format.js"
@@ -38,6 +40,8 @@ const plugin = Plugin.define({
     let selectedKey: string | undefined
     let dialogVersion = 0
     const sorted = () => orderProviders(live.data.providers, normalizePreferences(preferences).order)
+    const sidebarEnabled = () => normalizePreferences(preferences).sidebar
+    const pollingEnabled = () => preferences.hud || sidebarEnabled() || preferences.alerts
 
     function refresh(fresh = false): Promise<void> {
       if (inFlight) return fresh && !inFlightFresh ? inFlight.then(() => refresh(true)) : inFlight
@@ -131,6 +135,7 @@ const plugin = Plugin.define({
         { title: "Choose first service", value: "first", description: "First tab and HUD service" },
         { title: "Reorder all services", value: "order" },
         { title: `HUD: ${preferences.hud ? "on" : "off"}`, value: "hud" },
+        { title: `Quota sidebar: ${sidebarEnabled() ? "on" : "off"}`, value: "sidebar" },
         { title: `Low-quota alerts: ${preferences.alerts ? "on" : "off"}`, value: "alerts", description: "20% / 5%, once per threshold and window" },
         { title: `Active refresh: ${preferences.refreshSeconds}s`, value: "refresh" },
       ] })
@@ -142,7 +147,7 @@ const plugin = Plugin.define({
           selectedKey = undefined
         }
       }
-      if (action === "hud" || action === "alerts") await savePreferences((draft) => { draft[action] = !draft[action] })
+      if (action === "hud" || action === "alerts" || action === "sidebar") await savePreferences((draft) => { draft[action] = !normalizePreferences(draft)[action] })
       if (action === "refresh") {
         const seconds = await context.ui.dialog.select({ title: "Refresh while active", options: [30, 60, 120, 300, 900].map((value) => ({ title: `${value} seconds`, value })) })
         if (seconds) await savePreferences((draft) => { draft.refreshSeconds = seconds })
@@ -184,15 +189,45 @@ const plugin = Plugin.define({
         onMouseDown: () => { void open() },
       }),
     })
-    const stopActivity = context.data.on("session.execution.started", () => { lastActive = Date.now(); if ((preferences.hud || preferences.alerts) && Date.now() - lastAttemptAt >= normalizePreferences(preferences).refreshSeconds * 1000) void refresh() })
+    const unregisterSidebar = context.ui.slot({
+      append: "sidebar.content",
+      render: () => Show({
+        get when() { return sidebarEnabled() },
+        get children() { return jsx("box", {
+          flexDirection: "column",
+          children: [
+            jsx("text", { fg: context.theme.text.base, get children() { return `Quota${live.busy ? " · updating" : ""}${live.now - live.data.fetchedAt > 300_000 && live.data.fetchedAt ? " · stale" : ""}` }, onMouseDown: () => { lastActive = Date.now(); if (live.data.fetchedAt) present(); else void open() } }),
+            jsx("scrollbox", {
+              width: "100%", scrollY: true,
+              get height() { return Math.min(14, Math.max(1, sorted().reduce((lines, provider) => lines + 1 + provider.windows.length, 0))) },
+              children: jsx("box", { flexDirection: "column", children: For({
+                get each() { return sorted() },
+                children: (provider: QuotaProviderView, index: () => number) => jsx("box", {
+                  flexDirection: "column", onMouseDown: () => { lastActive = Date.now(); present(index()) },
+                  children: [
+                    jsx("text", { fg: context.theme.text.base, get children() { return `${provider.title}${provider.account ? ` · ${provider.account}` : ""}` } }),
+                    For({ get each() { return provider.windows }, children: (window: QuotaProviderView["windows"][number]) => jsx("text", {
+                      get fg() { return window.percentRemaining <= 5 ? context.theme.text.feedback.error.base : window.percentRemaining <= 20 ? context.theme.text.feedback.warning.base : context.theme.text.muted },
+                      get children() { live.now; return formatSidebarWindow(window) },
+                    }) }),
+                  ],
+                }),
+              }) }),
+            }),
+            jsx("text", { fg: context.theme.text.muted, get children() { return live.data.errors.length ? `${live.data.errors.length} quota error(s) · /quota` : live.data.providers.length ? "Click account · F refresh in /quota" : "Connect account · /quota" } }),
+          ],
+        }) },
+      }),
+    })
+    const stopActivity = context.data.on("session.execution.started", () => { lastActive = Date.now(); if (pollingEnabled() && Date.now() - lastAttemptAt >= normalizePreferences(preferences).refreshSeconds * 1000) void refresh() })
     const timer = setInterval(() => {
       updateLive((draft) => { draft.now = Date.now() })
       const running = context.data.session.list().some((session) => context.data.session.status(session.id) === "running")
       if (running) lastActive = Date.now()
-      if ((preferences.hud || preferences.alerts) && Date.now() - lastActive < 300_000 && Date.now() - lastAttemptAt >= normalizePreferences(preferences).refreshSeconds * 1000) void refresh()
+      if (pollingEnabled() && Date.now() - lastActive < 300_000 && Date.now() - lastAttemptAt >= normalizePreferences(preferences).refreshSeconds * 1000) void refresh()
     }, 10_000)
-    if (preferences.hud || preferences.alerts) void refresh()
-    return () => { disposed = true; clearInterval(timer); stopActivity(); unregisterHud(); unregisterCommands() }
+    if (pollingEnabled()) void refresh()
+    return () => { disposed = true; clearInterval(timer); stopActivity(); unregisterHud(); unregisterSidebar(); unregisterCommands() }
   },
 })
 

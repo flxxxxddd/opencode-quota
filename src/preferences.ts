@@ -5,10 +5,11 @@ export type Service = typeof SERVICES[number]
 export type QuotaPreferences = {
   order: Service[]
   hud: boolean
+  sidebar: boolean
   alerts: boolean
   refreshSeconds: number
 }
-export const DEFAULT_PREFERENCES: QuotaPreferences = { order: [...SERVICES], hud: true, alerts: true, refreshSeconds: 120 }
+export const DEFAULT_PREFERENCES: QuotaPreferences = { order: [...SERVICES], hud: true, sidebar: true, alerts: true, refreshSeconds: 120 }
 
 export function serviceOf(provider: QuotaProviderView): Service {
   if (provider.title === "GitHub Copilot") return "copilot"
@@ -31,6 +32,7 @@ export function normalizePreferences(value: Partial<QuotaPreferences>): QuotaPre
   return {
     order,
     hud: typeof value.hud === "boolean" ? value.hud : true,
+    sidebar: typeof value.sidebar === "boolean" ? value.sidebar : true,
     alerts: typeof value.alerts === "boolean" ? value.alerts : true,
     refreshSeconds: typeof value.refreshSeconds === "number" && Number.isFinite(value.refreshSeconds)
       ? Math.max(30, Math.min(900, value.refreshSeconds)) : 120,

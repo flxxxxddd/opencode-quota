@@ -47,7 +47,7 @@ export async function getGitHubCopilotQuota(account?: NonNullable<CopilotResolve
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${resolved.accessToken}`,
-        "User-Agent": "opencode-quota/0.3.3",
+        "User-Agent": "opencode-quota/0.3.4",
         "X-GitHub-Api-Version": "2025-04-01",
       },
     }, "GitHub Copilot")

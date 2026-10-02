@@ -12,6 +12,7 @@ OpenCode TUI plugin that shows model/subscription quota from multiple providers 
 - Kimi Code subscription quota and multiple saved accounts
 - `/quota` always fetches fresh data; `/quota-settings` and `/quota-order` manage preferences
 - Prompt HUD, active-only background refresh and deduplicated 20% / 5% alerts
+- Quota sidebar for all accounts/windows, sharing the HUD snapshot with no extra polling
 
 ## Build & Verify
 

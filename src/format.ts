@@ -153,3 +153,11 @@ export function formatHud(provider: QuotaProviderView | undefined, now: number, 
   const stale = now - fetchedAt > 300_000 ? " · stale" : ""
   return `${provider.title} · ${windows.join(" · ")}${reset}${stale}${errors ? " · !" : ""}`
 }
+
+export function formatSidebarWindow(window: QuotaWindowView): string {
+  const percent = clampPercent(window.percentRemaining)
+  const filled = Math.round(percent / 10)
+  const reset = window.resetAt ? ` · ${formatResetCountdown(new Date(window.resetAt).toISOString())}` : ""
+  const label = window.label.replace(/-hour limit$/, "h").replace(/-day limit$/, "d").replace(/ limit$/, "")
+  return `${label} ${"█".repeat(filled)}${"░".repeat(10 - filled)} ${percent}%${reset}`
+}
