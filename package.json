@@ -1,7 +1,7 @@
 {
   "name": "@whosydd/opencode-quota",
-  "version": "0.3.2",
-  "description": "OpenCode TUI plugin for checking quota and subscription usage (OpenCode Go, GitHub Copilot).",
+  "version": "0.3.3",
+  "description": "OpenCode V2 quota dashboard and HUD with multi-account usage, ordering and low-quota alerts.",
   "type": "module",
   "author": "GY <dev.youngkwok718@gmail.com>",
   "license": "MIT",
@@ -47,8 +47,10 @@
     "build": "tsup src/index.ts src/tui.tsx src/rpc.ts --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/solid --external solid-js",
     "dev": "npm run build && node scripts/dev.mjs",
     "typecheck": "tsc --noEmit",
+    "test": "tsup --config tests/tsup.config.ts && node --test .test-dist/*.test.js",
+    "test:ui": "bun --conditions=browser tests/ui-smoke.ts",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run build && npm run typecheck"
+    "prepublishOnly": "npm run build && npm run typecheck && npm test"
   },
   "engines": {
     "node": ">=18",

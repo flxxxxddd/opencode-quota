@@ -1,3 +1,4 @@
 node_modules/
 dist/
+.test-dist/
 .opencode/opencode-model-quota.json

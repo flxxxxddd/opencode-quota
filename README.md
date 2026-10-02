@@ -22,8 +22,71 @@ Providers only run when their credentials are configured. Unconfigured providers
 | Command | Description |
 |---------|-------------|
 | `/quota` | Fetch and show current quota from all configured providers |
+| `/quota-settings` | Choose the first service, full order, HUD, alerts and active refresh interval |
+| `/quota-order` | Set service order, for example `kimi, openai, copilot, go` |
 
 The command always fetches fresh data. 
+
+## HUD and dashboard controls
+
+The prompt footer shows the first configured service in your preferred order,
+its first two quota windows and the next reset. Click it or run `/quota` for
+the full dashboard. Stale snapshots are labeled; failed refreshes retain the
+last good snapshot rather than suggesting that quota disappeared.
+
+- **← / →**, **H / L**, **Tab / Shift+Tab**: switch accounts instantly using the
+  loaded snapshot; switching tabs does not make network requests.
+- **F / Ctrl+R**: fetch a fresh snapshot.
+- **S**: settings.
+- **[ / ]**: move the selected service earlier/later in the saved order.
+- **R**: redeem a saved OpenAI reset, with selection and explicit confirmation.
+- **Esc**: close.
+
+Service IDs are `openai`, `copilot`, `kimi`, and `go`. Omitted services are
+appended to the end. Account order within a service remains stable. Preferences
+are persisted by OpenCode and synchronized between TUI instances. The first
+available service in the saved order also drives the HUD.
+
+Background snapshots refresh every **120 seconds** while sessions are running
+and for five minutes after activity. Settings offer 30/60/120/300/900 seconds.
+Idle clients stop polling. Background server snapshots have a 60-second cache;
+`/quota` and **F** bypass it. Concurrent refreshes share one in-flight request.
+Each provider HTTP request, including its response body, has a 12-second
+deadline. Reset redemption is **never retried automatically**.
+
+Low-quota warnings trigger at **20%** and **5%** remaining, once per threshold
+and quota window. They appear as in-app toasts and, when OpenCode's notification
+settings permit, a desktop notification while the terminal is unfocused.
+They never play an additional sound. HUD, alerts, order and refresh interval can
+all be changed in `/quota-settings` without editing files.
+
+Default preferences can also be supplied as plugin options on first use:
+
+```jsonc
+{
+  "plugins": [{
+    "package": "@whosydd/opencode-quota",
+    "options": { "order": ["openai", "kimi", "copilot", "go"], "hud": true, "alerts": true, "refreshSeconds": 120 }
+  }]
+}
+```
+
+Saved settings take precedence over these initial defaults. No credentials are
+stored in preference or alert state, and unexpected SDK errors are sanitized
+before displaying them.
+
+## Verification
+
+```sh
+npm run build
+npm run typecheck
+npm test
+npm run test:ui # optional: Bun native-renderer HUD/tab/order smoke test
+```
+
+Tests cover service ordering, preference recovery, threshold deduplication,
+staleness, safe errors, network timeouts and cancellation. Provider APIs are
+mocked; tests do not redeem resets or contact subscription endpoints.
 
 ## Output
 

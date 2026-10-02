@@ -1,5 +1,6 @@
 import { readAuthFileCached, resolveOpenAIAuth, isAuthExpired, type OpenAIResolvedAuth } from "./opencode-auth.js"
 import { randomUUID } from "node:crypto"
+import { quotaFetch } from "./network.js"
 
 type RateLimitWindow = {
   used_percent: number
@@ -54,14 +55,14 @@ const RESET_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits
 function headersFor(auth: NonNullable<OpenAIResolvedAuth>): Record<string, string> {
   return {
     Authorization: `Bearer ${auth.accessToken}`,
-    "User-Agent": "opencode-quota/0.3.2",
+    "User-Agent": "opencode-quota/0.3.3",
     ...(auth.accountId ? { "ChatGPT-Account-Id": auth.accountId } : {}),
   }
 }
 
 export async function listResetCredits(auth: NonNullable<OpenAIResolvedAuth>): Promise<{ count: number; credits: ResetCredit[] }> {
   if (isAuthExpired(auth.expiresAt)) throw new Error("OpenAI authentication expired. Log in again through OpenCode.")
-  const response = await fetch(RESET_URL, { headers: headersFor(auth) })
+  const response = await quotaFetch(RESET_URL, { headers: headersFor(auth) }, "OpenAI resets")
   if (!response.ok) throw new Error(`OpenAI reset list failed (HTTP ${response.status}).`)
   const data = await response.json() as { available_count?: unknown; credits?: unknown }
   if (!Array.isArray(data.credits)) throw new Error("OpenAI reset list is unavailable.")
@@ -79,11 +80,11 @@ export async function listResetCredits(auth: NonNullable<OpenAIResolvedAuth>): P
 
 export async function consumeResetCredit(auth: NonNullable<OpenAIResolvedAuth>, creditId: string): Promise<string> {
   if (isAuthExpired(auth.expiresAt)) throw new Error("OpenAI authentication expired. Log in again through OpenCode.")
-  const response = await fetch(`${RESET_URL}/consume`, {
+  const response = await quotaFetch(`${RESET_URL}/consume`, {
     method: "POST",
     headers: { ...headersFor(auth), "Content-Type": "application/json" },
     body: JSON.stringify({ credit_id: creditId, redeem_request_id: randomUUID() }),
-  })
+  }, "OpenAI reset redemption")
   if (!response.ok) throw new Error(`OpenAI reset failed (HTTP ${response.status}). Check your account before retrying.`)
   const result = await response.json() as { code?: string }
   if (result.code === "reset") return "Reset applied."
@@ -154,12 +155,7 @@ export async function getOpenAIQuota(account?: NonNullable<OpenAIResolvedAuth>):
 
   const headers = headersFor(resolved)
 
-  let response: Response
-  try {
-    response = await fetch(OPENAI_USAGE_URL, { headers })
-  } catch {
-    throw new Error("Network error while fetching OpenAI quota.")
-  }
+  const response = await quotaFetch(OPENAI_USAGE_URL, { headers }, "OpenAI")
 
   if (!response.ok) {
     if (response.status === 401) {

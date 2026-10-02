@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
+import { jsx } from "@opentui/solid/jsx-runtime"
 import { QuotaRpc } from "./rpc.js"
 import { QuotaDialog, type QuotaDashboardData } from "./quota-dialog.js"
 import { loadOptionalOpenCodeGoConfig } from "./config.js"
@@ -8,17 +9,148 @@ import {
   openAIView,
   kimiView,
   openCodeGoView,
+  formatHud,
+  quotaErrorMessage,
   type QuotaProviderView,
 } from "./format.js"
 import { getOpenAIQuota, listResetCredits, consumeResetCredit } from "./openai.js"
 import { getKimiQuota } from "./kimi.js"
 import { getOpenCodeGoQuota } from "./opencode-go.js"
 import { readAdditionalAuthFiles, resolveOpenAIAuth, resolveKimiAuth, type OpenAIResolvedAuth } from "./opencode-auth.js"
+import { collectAlerts, DEFAULT_PREFERENCES, normalizePreferences, orderProviders, parseOrder, providerKey, serviceOf, SERVICES, type AlertState, type QuotaPreferences } from "./preferences.js"
 
 const plugin = Plugin.define({
   id: "whosydd.opencode-quota",
   setup(context) {
-    return context.ui.slot({
+    const [preferences, savePreferences] = context.storage.store<QuotaPreferences>("preferences", {
+      initial: normalizePreferences({ ...DEFAULT_PREFERENCES, ...context.options }),
+    })
+    const [alerts, saveAlerts] = context.storage.store<{ windows: AlertState }>("thresholds", { initial: { windows: {} } })
+    const [live, updateLive] = context.storage.memory<{ data: QuotaDashboardData; busy: boolean; now: number }>("dashboard", {
+      initial: { data: { providers: [], errors: [], fetchedAt: 0 }, busy: false, now: Date.now() },
+    })
+    let disposed = false
+    let accounts = new Map<string, NonNullable<OpenAIResolvedAuth>>()
+    let inFlight: Promise<void> | undefined
+    let inFlightFresh = false
+    let lastActive = Date.now()
+    let lastAttemptAt = 0
+    let selectedKey: string | undefined
+    let dialogVersion = 0
+    const sorted = () => orderProviders(live.data.providers, normalizePreferences(preferences).order)
+
+    function refresh(fresh = false): Promise<void> {
+      if (inFlight) return fresh && !inFlightFresh ? inFlight.then(() => refresh(true)) : inFlight
+      inFlightFresh = fresh
+      lastAttemptAt = Date.now()
+      updateLive((draft) => { draft.busy = true })
+      inFlight = (async () => {
+        try {
+          const result = await buildQuotaDashboard(context, fresh)
+          if (disposed) return
+          accounts = result.accounts
+          updateLive((draft) => {
+            // Keep the last successful snapshot visibly stale on complete failure.
+            if (!result.data.providers.length && draft.data.providers.length) draft.data.errors = result.data.errors
+            else draft.data = result.data
+          })
+          if (preferences.alerts) {
+            const next = collectAlerts(result.data.providers, alerts.windows)
+            await saveAlerts((draft) => { draft.windows = next.state })
+            if (next.messages.length) {
+              const message = next.messages.join("\n")
+              context.ui.toast.show({ title: "Low quota", message, variant: "warning", duration: 8000 })
+              void context.attention.notify({ title: "Low quota", message, notification: { when: "blurred" }, sound: false }).catch(() => {})
+            }
+          }
+        } catch (error) {
+          if (!disposed) updateLive((draft) => { draft.data.errors = [quotaErrorMessage(error)] })
+        } finally {
+          if (!disposed) updateLive((draft) => { draft.busy = false })
+        }
+      })().finally(() => { inFlight = undefined })
+      return inFlight
+    }
+
+    function present(index?: number): void {
+      if (disposed) return
+      const providers = sorted()
+      const selected = index ?? Math.max(0, providers.findIndex((provider) => providerKey(provider) === selectedKey))
+      const total = providers.length + Number(live.data.errors.length > 0)
+      const safeIndex = Math.max(0, Math.min(selected, Math.max(0, total - 1)))
+      if (providers[safeIndex]) selectedKey = providerKey(providers[safeIndex]!)
+      const data = { ...live.data, providers }
+      const version = ++dialogVersion
+      let resetBusy = false
+      context.ui.dialog.set({ size: total <= 1 ? "medium" : "large", centered: true })
+      context.ui.dialog.show(() => <QuotaDialog context={context} data={data} selected={safeIndex}
+        onSelect={(next) => { context.ui.dialog.clear(); present(next) }}
+        onRefresh={async () => { await refresh(true); if (version !== dialogVersion) return; context.ui.dialog.clear(); present() }}
+        onSettings={settings}
+        onMove={async (direction) => {
+          const provider = providers[safeIndex]
+          if (!provider) return
+          const service = serviceOf(provider)
+          const order = normalizePreferences(preferences).order
+          const from = order.indexOf(service)
+          const to = Math.max(0, Math.min(order.length - 1, from + direction))
+          ;[order[from], order[to]] = [order[to]!, order[from]!]
+          await savePreferences((draft) => { draft.order = order })
+          context.ui.dialog.clear(); present()
+        }}
+        onReset={async (account) => {
+          if (resetBusy) return
+          resetBusy = true
+          try { await redeemReset(context, data, accounts, account, async () => { await refresh(true); present() }) }
+          finally { resetBusy = false }
+        }} />, () => { dialogVersion++ })
+    }
+
+    async function open(): Promise<void> {
+      lastActive = Date.now()
+      context.ui.toast.show({ message: "Fetching quota…", variant: "info" })
+      await refresh(true)
+      present()
+    }
+
+    async function changeOrder(): Promise<void> {
+      const value = await context.ui.dialog.prompt({ title: "Quota service order", description: "First service also appears in the HUD. IDs: openai, copilot, kimi, go. Omitted services go last.", value: normalizePreferences(preferences).order.join(", ") })
+      if (value === undefined) return
+      try {
+        const order = parseOrder(value)
+        await savePreferences((draft) => { draft.order = order })
+        selectedKey = undefined
+        context.ui.toast.show({ message: `Quota order: ${order.join(" → ")}`, variant: "success" })
+      } catch (error) {
+        await context.ui.dialog.alert({ title: "Invalid order", message: errorMessage(error) })
+      }
+    }
+
+    async function settings(): Promise<void> {
+      const action = await context.ui.dialog.select({ title: "Quota settings", options: [
+        { title: "Choose first service", value: "first", description: "First tab and HUD service" },
+        { title: "Reorder all services", value: "order" },
+        { title: `HUD: ${preferences.hud ? "on" : "off"}`, value: "hud" },
+        { title: `Low-quota alerts: ${preferences.alerts ? "on" : "off"}`, value: "alerts", description: "20% / 5%, once per threshold and window" },
+        { title: `Active refresh: ${preferences.refreshSeconds}s`, value: "refresh" },
+      ] })
+      if (action === "order") await changeOrder()
+      if (action === "first") {
+        const first = await context.ui.dialog.select({ title: "First quota service", options: SERVICES.map((service) => ({ title: service, value: service })) })
+        if (first) {
+          await savePreferences((draft) => { draft.order = [first, ...normalizePreferences(draft).order.filter((service) => service !== first)] })
+          selectedKey = undefined
+        }
+      }
+      if (action === "hud" || action === "alerts") await savePreferences((draft) => { draft[action] = !draft[action] })
+      if (action === "refresh") {
+        const seconds = await context.ui.dialog.select({ title: "Refresh while active", options: [30, 60, 120, 300, 900].map((value) => ({ title: `${value} seconds`, value })) })
+        if (seconds) await savePreferences((draft) => { draft.refreshSeconds = seconds })
+      }
+      present()
+    }
+
+    const unregisterCommands = context.ui.slot({
       append: "app",
       render: () => {
         context.keymap.layer(() => ({
@@ -31,44 +163,40 @@ const plugin = Plugin.define({
               palette: true,
               slash: { name: "quota" },
               suggested: true,
-              run: () => showQuotaDialog(context),
+              run: open,
             },
+            { id: "quota.settings", title: "Quota settings", group: "Quota", palette: true, slash: { name: "quota-settings" }, run: settings },
+            { id: "quota.order", title: "Reorder quota services", group: "Quota", palette: true, slash: { name: "quota-order" }, run: changeOrder },
           ],
-          bindings: ["quota.show"],
+          bindings: ["quota.show", "quota.settings", "quota.order"],
         }))
         return null
       },
     })
+    const unregisterHud = context.ui.slot({
+      append: "prompt.footer.status",
+      render: () => jsx("text", {
+        get fg() {
+          const low = Math.min(...(sorted()[0]?.windows.map((window) => window.percentRemaining) ?? [100]))
+          return low <= 5 ? context.theme.text.feedback.error.base : low <= 20 ? context.theme.text.feedback.warning.base : context.theme.text.muted
+        },
+        get children() { return preferences.hud ? `${live.busy ? "↻ " : ""}${formatHud(sorted()[0], live.now, live.data.fetchedAt, live.data.errors.length)}` : "" },
+        onMouseDown: () => { void open() },
+      }),
+    })
+    const stopActivity = context.data.on("session.execution.started", () => { lastActive = Date.now(); if ((preferences.hud || preferences.alerts) && Date.now() - lastAttemptAt >= normalizePreferences(preferences).refreshSeconds * 1000) void refresh() })
+    const timer = setInterval(() => {
+      updateLive((draft) => { draft.now = Date.now() })
+      const running = context.data.session.list().some((session) => context.data.session.status(session.id) === "running")
+      if (running) lastActive = Date.now()
+      if ((preferences.hud || preferences.alerts) && Date.now() - lastActive < 300_000 && Date.now() - lastAttemptAt >= normalizePreferences(preferences).refreshSeconds * 1000) void refresh()
+    }, 10_000)
+    if (preferences.hud || preferences.alerts) void refresh()
+    return () => { disposed = true; clearInterval(timer); stopActivity(); unregisterHud(); unregisterCommands() }
   },
 })
 
-async function showQuotaDialog(context: Context, selected = 0): Promise<void> {
-  context.ui.toast.show({ message: "Fetching quota…", variant: "info" })
-
-  try {
-    const { data, accounts } = await buildQuotaDashboard(context)
-    let resetBusy = false
-    context.ui.dialog.set({ size: data.providers.length === 1 && data.errors.length === 0 ? "medium" : "large", centered: true })
-    context.ui.dialog.show(() => <QuotaDialog context={context} data={data} selected={selected} onSelect={(index) => {
-      // Precompiled plugin JSX is static per mount, and the TUI does not
-      // repaint replaced dialog content. Close and reopen like a fresh /quota
-      // run instead (which does paint), fetching fresh data along the way.
-      context.ui.dialog.clear()
-      void showQuotaDialog(context, index)
-    }} onReset={async (account) => {
-      if (resetBusy) return
-      resetBusy = true
-      try { await redeemReset(context, data, accounts, account) } finally { resetBusy = false }
-    }} />)
-  } catch (error) {
-    await context.ui.dialog.alert({
-      title: "Quota Error",
-      message: error instanceof Error ? error.message : "Failed to fetch quota.",
-    })
-  }
-}
-
-async function redeemReset(context: Context, data: QuotaDashboardData, accounts: Map<string, NonNullable<OpenAIResolvedAuth>>, account: string): Promise<void> {
+async function redeemReset(context: Context, data: QuotaDashboardData, accounts: Map<string, NonNullable<OpenAIResolvedAuth>>, account: string, onRedeemed: () => Promise<void>): Promise<void> {
   const options = data.providers.filter((provider) => provider.reset?.account === account).flatMap((provider) => provider.reset?.credits.map((credit) => ({
     title: `${provider.title} · ${credit.title}`,
     description: credit.expiresAt ? `Expires ${new Date(credit.expiresAt).toLocaleString()}` : undefined,
@@ -108,13 +236,13 @@ async function redeemReset(context: Context, data: QuotaDashboardData, accounts:
   try {
     const message = auth ? await consumeResetCredit(auth, id) : ((await context.client.rpc(QuotaRpc).redeem({ credentialID: name, creditID: id })) as { message: string }).message
     context.ui.toast.show({ message, variant: "success" })
-    await showQuotaDialog(context)
+    await onRedeemed()
   } catch (error) {
     await context.ui.dialog.alert({ title: "Reset failed", message: errorMessage(error) })
   }
 }
 
-async function buildQuotaDashboard(context: Context): Promise<{ data: QuotaDashboardData; accounts: Map<string, NonNullable<OpenAIResolvedAuth>> }> {
+async function buildQuotaDashboard(context: Context, fresh = false): Promise<{ data: QuotaDashboardData; accounts: Map<string, NonNullable<OpenAIResolvedAuth>> }> {
   const tasks: Array<Promise<QuotaProviderView>> = []
   const errors: string[] = []
   const accounts = new Map<string, NonNullable<OpenAIResolvedAuth>>()
@@ -128,7 +256,7 @@ async function buildQuotaDashboard(context: Context): Promise<{ data: QuotaDashb
   }
 
   try {
-    const snapshot = await context.client.rpc(QuotaRpc).snapshot({}) as { providers: QuotaProviderView[]; errors: string[] }
+    const snapshot = await context.client.rpc(QuotaRpc).snapshot({ fresh }) as { providers: QuotaProviderView[]; errors: string[] }
     for (const provider of snapshot.providers) tasks.push(Promise.resolve(provider as QuotaProviderView))
     errors.push(...snapshot.errors)
   } catch {
@@ -148,7 +276,7 @@ async function buildQuotaDashboard(context: Context): Promise<{ data: QuotaDashb
           accounts.set(uniqueName, openai)
           tasks.push(getOpenAIQuota(openai).then((snapshot) => {
             if (!snapshot) throw new Error(`OpenAI (${uniqueName}) quota unavailable.`)
-            return openAIView(snapshot, uniqueName)
+            return { ...openAIView(snapshot, uniqueName), id: `external:${uniqueName}` }
           }).catch((error) => { throw new Error(`OpenAI (${uniqueName}): ${errorMessage(error)}`) }))
         }
       }
@@ -169,15 +297,7 @@ async function buildQuotaDashboard(context: Context): Promise<{ data: QuotaDashb
     }
   } catch (error) { errors.push(errorMessage(error)) }
 
-  if (tasks.length === 0) {
-    if (errors.length > 0) {
-      throw new Error(errors.join("\n\n"))
-    }
-
-    throw new Error(
-      "No quota providers are configured. Log in through OpenCode or configure OpenCode Go / Kimi credentials.",
-    )
-  }
+  if (tasks.length === 0 && errors.length === 0) errors.push("No quota providers configured. Connect an account in /connect.")
 
   const results = await Promise.allSettled(tasks)
   const providers: QuotaProviderView[] = []
@@ -189,10 +309,6 @@ async function buildQuotaDashboard(context: Context): Promise<{ data: QuotaDashb
     }
 
     errors.push(errorMessage(result.reason))
-  }
-
-  if (providers.length === 0) {
-    throw new Error(errors.join("\n\n"))
   }
 
   return { data: { providers, errors, fetchedAt: Date.now() }, accounts }

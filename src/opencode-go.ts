@@ -2,6 +2,7 @@ import {
   loadOpenCodeGoConfig,
   type OpenCodeGoConfig,
 } from "./config.js"
+import { quotaFetch } from "./network.js"
 
 type OpenCodeGoWindow = {
   quotaPercent: number
@@ -21,18 +22,13 @@ export async function getOpenCodeGoQuota(): Promise<OpenCodeGoSnapshot> {
 }
 
 async function fetchOpenCodeGoQuota(config: OpenCodeGoConfig): Promise<OpenCodeGoSnapshot> {
-  let response: Response
-  try {
-    response = await fetch(`https://opencode.ai/workspace/${encodeURIComponent(config.workspaceId)}/go`, {
+  const response = await quotaFetch(`https://opencode.ai/workspace/${encodeURIComponent(config.workspaceId)}/go`, {
       headers: {
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         Cookie: `auth=${config.authCookie}`,
-        "User-Agent": "opencode-quota/0.3.2",
+        "User-Agent": "opencode-quota/0.3.3",
       },
-    })
-  } catch {
-    throw new Error("Network error while fetching OpenCode Go quota.")
-  }
+    }, "OpenCode Go")
 
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {

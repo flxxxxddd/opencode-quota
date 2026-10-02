@@ -9,7 +9,9 @@ OpenCode TUI plugin that shows model/subscription quota from multiple providers 
 - OpenCode Go rolling, weekly, and monthly subscription quota (HTML scraping)
 - GitHub Copilot monthly premium request quota, allowance, and overage
 - OpenAI rate-limit windows derived from the API response duration, plus code-review windows when available
-- Single slash command: `/quota` - always fetches fresh data
+- Kimi Code subscription quota and multiple saved accounts
+- `/quota` always fetches fresh data; `/quota-settings` and `/quota-order` manage preferences
+- Prompt HUD, active-only background refresh and deduplicated 20% / 5% alerts
 
 ## Build & Verify
 
@@ -17,13 +19,17 @@ OpenCode TUI plugin that shows model/subscription quota from multiple providers 
 npm install
 npm run build      # tsup ESM + dts -> dist/
 npm run typecheck  # tsc --noEmit
+npm test           # node:test with mocked networking
 ```
 
-No test suite exists yet. Verify by building and type-checking.
+Verify by building, type-checking and running tests. Never redeem real resets during verification.
 
 ## Repository Layout
 
 - `src/tui.tsx`: TUI plugin entrypoint. Registers slash commands and orchestrates provider calls.
+- `src/index.ts`: V2 server integration/RPC, credential resolution and background snapshot cache.
+- `src/preferences.ts`: Service ordering, preference normalization and alert deduplication.
+- `src/network.ts`: Bounded requests including body consumption, with safe errors.
 - `src/quota-dialog.tsx`: Renders the quota dashboard and provider cards.
 - `src/config.ts`: Config loading from environment variables.
 - `src/opencode-auth.ts`: Shared auth resolution (JWT parsing, OAuth session reading, token expiry checks via `isAuthExpired`). All providers use this module instead of duplicating auth logic.
@@ -64,11 +70,11 @@ No test suite exists yet. Verify by building and type-checking.
 - OpenCode Go credentials should be provided via environment variables.
 - GitHub Copilot and OpenAI reuse the OAuth sessions stored by OpenCode.
 - String values support `{env:VARIABLE_NAME}` placeholders. Shell command placeholders like `{env:$(gh auth token)}` are explicitly rejected.
-- `refreshIntervalMinutes` is not supported (always fetches fresh data).
+- `refreshIntervalMinutes` is not supported. `refreshSeconds` controls active background refresh; `/quota` always fetches fresh data.
 - `readAuthFile` throws on malformed JSON in auth files rather than silently ignoring it.
 - Never commit tokens or cookies to the repo.
 
 ## Constraints
 
-- TUI-only for now. No server plugin entrypoint unless a concrete need appears.
+- Server resolves OpenCode V2 credentials; the TUI receives view data, never those raw credentials. Additional externally managed auth files remain read-only.
 - This is a single-package repo, not a monorepo.

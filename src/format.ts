@@ -11,6 +11,8 @@ export type QuotaWindowView = {
 }
 
 export type QuotaProviderView = {
+  /** Stable, non-secret selector for ordering, selection and alert deduplication. */
+  id?: string
   title: string
   subtitle?: string
   account?: string
@@ -128,4 +130,26 @@ export function formatTimestamp(timestamp: number): string {
     month: "short",
     day: "2-digit",
   })
+}
+
+export function quotaErrorMessage(error: unknown): string {
+  // Do not expose arbitrary SDK errors: they can contain HTTP headers or credentials.
+  const message = error instanceof Error ? error.message : ""
+  if (/timed out|timeout/i.test(message)) return "Request timed out. Refresh to retry."
+  if (/429|rate.limit/i.test(message)) return "Rate limited (429). Wait before refreshing."
+  if (/expired|401|authentication/i.test(message)) return "Sign-in expired or rejected. Reconnect in /connect."
+  if (/403|forbidden/i.test(message)) return "Access forbidden (403). Check subscription and permissions."
+  if (/network/i.test(message)) return "Network unavailable. Check your connection."
+  if (/no quota|no recognizable|parse|premium request data/i.test(message)) return "Quota response is unsupported or has changed."
+  if (/404|unavailable/i.test(message)) return "Quota endpoint unavailable for this account."
+  return "Could not update quota. Check your connection in /connect."
+}
+
+export function formatHud(provider: QuotaProviderView | undefined, now: number, fetchedAt: number, errors: number): string {
+  if (!provider) return errors ? "Quota unavailable · /quota" : "Quota · /quota"
+  const windows = provider.windows.slice(0, 2).map((window) => `${window.label.replace(/-hour limit$/, "h").replace(/-day limit$/, "d").replace(/ limit$/, "")} ${window.percentRemaining}%`)
+  const resetAt = provider.windows[0]?.resetAt
+  const reset = resetAt ? ` · reset ${formatResetCountdown(new Date(resetAt).toISOString())}` : ""
+  const stale = now - fetchedAt > 300_000 ? " · stale" : ""
+  return `${provider.title} · ${windows.join(" · ")}${reset}${stale}${errors ? " · !" : ""}`
 }

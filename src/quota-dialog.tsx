@@ -26,6 +26,9 @@ export type QuotaDialogProps = {
   selected: number
   onSelect: (index: number) => void
   onReset: (account: string) => Promise<void>
+  onRefresh: () => Promise<void>
+  onSettings: () => Promise<void>
+  onMove: (direction: number) => Promise<void>
 }
 
 export function QuotaDialog(props: QuotaDialogProps): JSX.Element {
@@ -42,6 +45,10 @@ export function QuotaDialog(props: QuotaDialogProps): JSX.Element {
       { id: "quota.close", title: "Close quota", bind: "escape", run: () => context.ui.dialog.clear() },
       { id: "quota.previous", title: "Previous quota tab", bind: "left,h,shift+tab", run: () => { if (total > 1) props.onSelect((selected - 1 + total) % total) } },
       { id: "quota.next", title: "Next quota tab", bind: "right,l,tab", run: () => { if (total > 1) props.onSelect((selected + 1) % total) } },
+      { id: "quota.refresh", title: "Refresh quota", bind: "f,ctrl+r", run: props.onRefresh },
+      { id: "quota.preferences", title: "Quota settings", bind: "s", run: props.onSettings },
+      { id: "quota.move.previous", title: "Move service earlier", bind: "[", run: () => props.onMove(-1) },
+      { id: "quota.move.next", title: "Move service later", bind: "]", run: () => props.onMove(1) },
       {
         id: "quota.reset",
         title: "Redeem OpenAI reset",
@@ -52,7 +59,7 @@ export function QuotaDialog(props: QuotaDialogProps): JSX.Element {
         },
       },
     ],
-    bindings: ["quota.close", "quota.previous", "quota.next", "quota.reset"],
+    bindings: ["quota.close", "quota.previous", "quota.next", "quota.reset", "quota.refresh", "quota.preferences", "quota.move.previous", "quota.move.next"],
   }))
 
   const tabs = total > 1 ? (
@@ -109,7 +116,8 @@ export function QuotaDialog(props: QuotaDialogProps): JSX.Element {
       </box>
       {tabs}
       {content}
-      <text fg={theme.text.muted}>{total > 1 ? "← → / h l switch   ·   " : ""}Updated {formatTimestamp(data.fetchedAt)}</text>
+      <text fg={theme.text.muted}>{total > 1 ? "← → switch · " : ""}F refresh · S settings · [ ] reorder</text>
+      <text fg={theme.text.muted}>Updated {formatTimestamp(data.fetchedAt)}</text>
     </box>
   )
 }

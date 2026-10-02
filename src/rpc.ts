@@ -4,7 +4,7 @@ export const QuotaRpc = Rpc.define({
   id: "whosydd.quota",
   methods: {
     snapshot: {
-      input: { type: "object", additionalProperties: false },
+      input: { type: "object", properties: { fresh: { type: "boolean" } }, additionalProperties: false },
       output: {
         type: "object",
         properties: {

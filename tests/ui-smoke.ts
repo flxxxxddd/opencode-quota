@@ -1,0 +1,73 @@
+import assert from "node:assert/strict"
+import { testRender } from "@opentui/solid"
+import { createStore, reconcile } from "solid-js/store"
+import plugin from "../src/tui.js"
+import type { Context } from "@opencode/plugin/tui/context"
+import type { QuotaProviderView } from "../src/format.js"
+
+// Optional native-renderer smoke test. Run with Bun's browser condition so all
+// OpenTUI components share Solid's client runtime, just as in OpenCode.
+const claims: any[] = []
+const commands = new Map<string, any>()
+const stores = new Map<string, any>()
+const feedback = { base: "#ffffff" }
+let requests = 0
+let dialogRender: (() => any) | undefined
+const providers: QuotaProviderView[] = [
+  { id: "test-openai", title: "OpenAI", windows: [{ label: "5-hour limit", percentRemaining: 72 }] },
+  { id: "test-kimi", title: "Kimi Code", windows: [{ label: "Weekly limit", percentRemaining: 85 }] },
+]
+const storage = (key: string, { initial }: any) => {
+  if (stores.has(key)) return stores.get(key)
+  const [state, update] = createStore(initial)
+  const entry = [state, (mutation: any) => {
+    const draft = structuredClone(JSON.parse(JSON.stringify(state)))
+    mutation(draft); update(reconcile(draft))
+    return Promise.resolve()
+  }]
+  stores.set(key, entry)
+  return entry
+}
+const context = {
+  options: {},
+  storage: { store: storage, memory: storage },
+  theme: { text: { base: "#ffffff", muted: "#aaaaaa", feedback: { success: feedback, warning: feedback, error: feedback } }, border: { base: "#aaaaaa" } },
+  attention: { notify: async () => ({ ok: true }) },
+  data: { on: () => () => {}, session: { list: () => [], status: () => "idle" } },
+  client: { rpc: () => ({ snapshot: async () => { requests++; return { providers, errors: [] } } }) },
+  keymap: { layer: (factory: any) => { for (const command of factory().commands ?? []) commands.set(command.id, command) } },
+  ui: {
+    slot: (claim: any) => { claims.push(claim); return () => {} },
+    toast: { show: () => {} },
+    dialog: { set: () => {}, show: (render: any) => { dialogRender = render }, clear: () => { dialogRender = undefined }, prompt: async () => "kimi, openai", select: async () => undefined },
+  },
+} as unknown as Context
+
+const dispose = await plugin.setup(context)
+const app = claims.find((claim) => claim.append === "app")
+app.render()
+const hudClaim = claims.find((claim) => claim.append === "prompt.footer.status")
+const hud = await testRender(() => hudClaim.render(), { width: 100, height: 4 })
+try {
+  await commands.get("quota.show").run()
+  await hud.flush()
+  assert.match(hud.captureCharFrame(), /OpenAI.*72%/)
+  const beforeTab = requests
+  const dashboard = await testRender(() => dialogRender!(), { width: 100, height: 24 })
+  await dashboard.flush()
+  assert.match(dashboard.captureCharFrame(), /72% left/)
+  await commands.get("quota.next").run()
+  assert.equal(requests, beforeTab, "tab changes must not fetch")
+  dashboard.renderer.destroy()
+  const second = await testRender(() => dialogRender!(), { width: 100, height: 24 })
+  await second.flush()
+  assert.match(second.captureCharFrame(), /Kimi Code/)
+  second.renderer.destroy()
+  await commands.get("quota.order").run()
+  await hud.flush()
+  assert.match(hud.captureCharFrame(), /Kimi Code.*85%/)
+  console.log("UI smoke passed: HUD is reactive, tabs switch without requests, saved order updates HUD.")
+} finally {
+  if (typeof dispose === "function") dispose()
+  hud.renderer.destroy()
+}

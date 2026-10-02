@@ -1,4 +1,5 @@
 import { readAuthFileCached, resolveCopilotAuth, isAuthExpired, type CopilotResolvedAuth } from "./opencode-auth.js"
+import { quotaFetch } from "./network.js"
 
 type GitHubCopilotQuotaSnapshot = {
   entitlement?: unknown
@@ -42,19 +43,14 @@ export async function getGitHubCopilotQuota(account?: NonNullable<CopilotResolve
     throw new Error("GitHub Copilot authentication expired. Log in to GitHub Copilot again through OpenCode.")
   }
 
-  let response: Response
-  try {
-    response = await fetch("https://api.github.com/copilot_internal/user", {
+  const response = await quotaFetch("https://api.github.com/copilot_internal/user", {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${resolved.accessToken}`,
-        "User-Agent": "opencode-quota/0.3.2",
+        "User-Agent": "opencode-quota/0.3.3",
         "X-GitHub-Api-Version": "2025-04-01",
       },
-    })
-  } catch {
-    throw new Error("Network error while fetching GitHub Copilot quota (OAuth).")
-  }
+    }, "GitHub Copilot")
 
   if (!response.ok) {
     if (response.status === 404) {

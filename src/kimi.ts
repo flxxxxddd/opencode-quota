@@ -1,4 +1,5 @@
 import { isAuthExpired, type OpenAIResolvedAuth } from "./opencode-auth.js"
+import { quotaFetch } from "./network.js"
 
 export type KimiSnapshot = {
   name: string
@@ -43,12 +44,9 @@ function windowFromRow(row: Row | undefined, label: string): KimiSnapshot["windo
 
 export async function getKimiQuota(auth: NonNullable<OpenAIResolvedAuth>, name: string): Promise<KimiSnapshot> {
   if (isAuthExpired(auth.expiresAt)) throw new Error(`Kimi (${name}) authentication expired.`)
-  let response: Response
-  try {
-    response = await fetch("https://api.kimi.com/coding/v1/usages", {
+  const response = await quotaFetch("https://api.kimi.com/coding/v1/usages", {
       headers: { Authorization: `Bearer ${auth.accessToken}`, Accept: "application/json" },
-    })
-  } catch { throw new Error(`Kimi (${name}) network error.`) }
+    }, "Kimi")
   if (!response.ok) throw new Error(`Kimi (${name}) quota request failed (HTTP ${response.status}).`)
   const data = await response.json() as Usage
   const windows: KimiSnapshot["windows"] = []
