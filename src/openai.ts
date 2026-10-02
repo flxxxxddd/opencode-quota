@@ -55,7 +55,7 @@ const RESET_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits
 function headersFor(auth: NonNullable<OpenAIResolvedAuth>): Record<string, string> {
   return {
     Authorization: `Bearer ${auth.accessToken}`,
-    "User-Agent": "opencode-quota/0.3.4",
+    "User-Agent": "opencode-quota/0.3.5",
     ...(auth.accountId ? { "ChatGPT-Account-Id": auth.accountId } : {}),
   }
 }

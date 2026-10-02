@@ -13,6 +13,7 @@ const stores = new Map<string, any>()
 const feedback = { base: "#ffffff" }
 let requests = 0
 let dialogRender: (() => any) | undefined
+let dialogsShown = 0
 const providers: QuotaProviderView[] = [
   { id: "test-openai", title: "OpenAI", windows: [{ label: "5-hour limit", percentRemaining: 72 }] },
   { id: "test-kimi", title: "Kimi Code", windows: [{ label: "Weekly limit", percentRemaining: 85 }] },
@@ -31,7 +32,7 @@ const storage = (key: string, { initial }: any) => {
 const context = {
   options: {},
   storage: { store: storage, memory: storage },
-  theme: { text: { base: "#ffffff", muted: "#aaaaaa", feedback: { success: feedback, warning: feedback, error: feedback } }, border: { base: "#aaaaaa" } },
+  theme: { text: { base: "#ffffff", muted: "#aaaaaa", feedback: { info: feedback, success: feedback, warning: feedback, error: feedback } }, border: { base: "#aaaaaa" } },
   attention: { notify: async () => ({ ok: true }) },
   data: { on: () => () => {}, session: { list: () => [], status: () => "idle" } },
   client: { rpc: () => ({ snapshot: async () => { requests++; return { providers, errors: [] } } }) },
@@ -39,7 +40,7 @@ const context = {
   ui: {
     slot: (claim: any) => { claims.push(claim); return () => {} },
     toast: { show: () => {} },
-    dialog: { set: () => {}, show: (render: any) => { dialogRender = render }, clear: () => { dialogRender = undefined }, prompt: async () => "kimi, openai", select: async () => undefined },
+    dialog: { set: () => {}, show: (render: any) => { dialogsShown++; dialogRender = render }, clear: () => { dialogRender = undefined }, prompt: async () => "kimi, openai", select: async () => undefined },
   },
 } as unknown as Context
 
@@ -58,6 +59,15 @@ try {
   assert.match(sidebar.captureCharFrame(), /OpenAI/)
   assert.match(sidebar.captureCharFrame(), /Kimi Code/)
   assert.match(sidebar.captureCharFrame(), /72%/)
+  const row = sidebar.captureCharFrame().split("\n").findIndex((line) => line.includes("● OpenAI"))
+  assert.ok(row >= 0)
+  const clicksBefore = dialogsShown
+  const requestsBeforeClick = requests
+  await sidebar.mockMouse.pressDown(2, row)
+  assert.equal(dialogsShown, clicksBefore, "press/hold alone must not open the dialog")
+  await sidebar.mockMouse.release(2, row)
+  assert.equal(dialogsShown, clicksBefore + 1, "a normal released click opens the quota dialog")
+  assert.equal(requests, requestsBeforeClick, "cached sidebar clicks do not refresh")
   const beforeTab = requests
   const dashboard = await testRender(() => dialogRender!(), { width: 100, height: 24 })
   await dashboard.flush()

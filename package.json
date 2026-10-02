@@ -1,6 +1,6 @@
 {
   "name": "@whosydd/opencode-quota",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "OpenCode V2 quota dashboard and HUD with multi-account usage, ordering and low-quota alerts.",
   "type": "module",
   "author": "GY <dev.youngkwok718@gmail.com>",
@@ -44,7 +44,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/tui.tsx src/rpc.ts --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/solid --external solid-js",
+    "build": "tsup src/index.ts src/tui.tsx src/rpc.ts --format esm --dts --out-dir dist --clean --external @opencode/plugin --external @opentui/core --external @opentui/solid --external solid-js",
     "dev": "npm run build && node scripts/dev.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsup --config tests/tsup.config.ts && node --test .test-dist/*.test.js",
@@ -58,6 +58,7 @@
   },
   "peerDependencies": {
     "@opencode/plugin": ">=2.0.16",
+    "@opentui/core": ">=0.5.10",
     "@opentui/solid": ">=0.5.10",
     "solid-js": ">=1.9.0"
   },

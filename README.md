@@ -40,6 +40,10 @@ It uses exactly the HUD's snapshot and refresh schedule: rendering, scrolling
 and clicking loaded accounts do not make additional provider requests. Long
 account lists scroll within a bounded panel. Click an account for its cached
 dashboard tab; use **F** there to refresh. Toggle the panel in `/quota-settings`.
+Service headings use distinct theme accents. Account names are truncated on
+their own line; each window separates remaining quota from its reset countdown.
+Controls activate on a normal left-button release, not on press/hold, and
+scrolling/dragging never opens a dashboard.
 
 - **← / →**, **H / L**, **Tab / Shift+Tab**: switch accounts instantly using the
   loaded snapshot; switching tabs does not make network requests.

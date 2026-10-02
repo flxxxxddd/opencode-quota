@@ -2,6 +2,8 @@ import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
 import { jsx } from "@opentui/solid/jsx-runtime"
 import { For, Show } from "solid-js"
+import { TextAttributes } from "@opentui/core"
+import { clickAction } from "./click.js"
 import { QuotaRpc } from "./rpc.js"
 import { QuotaDialog, type QuotaDashboardData } from "./quota-dialog.js"
 import { loadOptionalOpenCodeGoConfig } from "./config.js"
@@ -11,7 +13,7 @@ import {
   kimiView,
   openCodeGoView,
   formatHud,
-  formatSidebarWindow,
+  formatResetCountdown,
   quotaErrorMessage,
   type QuotaProviderView,
 } from "./format.js"
@@ -180,41 +182,53 @@ const plugin = Plugin.define({
     })
     const unregisterHud = context.ui.slot({
       append: "prompt.footer.status",
-      render: () => jsx("text", {
+      render: () => jsx("box", { ...clickAction(() => { void open() }), children: jsx("text", {
+        selectable: false,
         get fg() {
           const low = Math.min(...(sorted()[0]?.windows.map((window) => window.percentRemaining) ?? [100]))
           return low <= 5 ? context.theme.text.feedback.error.base : low <= 20 ? context.theme.text.feedback.warning.base : context.theme.text.muted
         },
         get children() { return preferences.hud ? `${live.busy ? "↻ " : ""}${formatHud(sorted()[0], live.now, live.data.fetchedAt, live.data.errors.length)}` : "" },
-        onMouseDown: () => { void open() },
-      }),
+      }) }),
     })
     const unregisterSidebar = context.ui.slot({
       append: "sidebar.content",
       render: () => Show({
         get when() { return sidebarEnabled() },
         get children() { return jsx("box", {
-          flexDirection: "column",
+          flexDirection: "column", gap: 1,
           children: [
-            jsx("text", { fg: context.theme.text.base, get children() { return `Quota${live.busy ? " · updating" : ""}${live.now - live.data.fetchedAt > 300_000 && live.data.fetchedAt ? " · stale" : ""}` }, onMouseDown: () => { lastActive = Date.now(); if (live.data.fetchedAt) present(); else void open() } }),
+            jsx("box", { ...clickAction(() => { lastActive = Date.now(); if (live.data.fetchedAt) present(); else void open() }), children: jsx("text", { selectable: false, attributes: TextAttributes.BOLD, fg: context.theme.text.feedback.info.base, get children() { return `Quota  ›${live.busy ? "  updating" : ""}${live.now - live.data.fetchedAt > 300_000 && live.data.fetchedAt ? "  stale" : ""}` } }) }),
             jsx("scrollbox", {
               width: "100%", scrollY: true,
-              get height() { return Math.min(14, Math.max(1, sorted().reduce((lines, provider) => lines + 1 + provider.windows.length, 0))) },
+              get height() { return Math.min(20, Math.max(1, sorted().reduce((lines, provider) => lines + 2 + Number(Boolean(provider.account)) + provider.windows.length * 2, 0))) },
               children: jsx("box", { flexDirection: "column", children: For({
                 get each() { return sorted() },
                 children: (provider: QuotaProviderView, index: () => number) => jsx("box", {
-                  flexDirection: "column", onMouseDown: () => { lastActive = Date.now(); present(index()) },
+                  flexDirection: "column", paddingBottom: 1,
+                  ...clickAction(() => { lastActive = Date.now(); present(index()) }),
                   children: [
-                    jsx("text", { fg: context.theme.text.base, get children() { return `${provider.title}${provider.account ? ` · ${provider.account}` : ""}` } }),
-                    For({ get each() { return provider.windows }, children: (window: QuotaProviderView["windows"][number]) => jsx("text", {
-                      get fg() { return window.percentRemaining <= 5 ? context.theme.text.feedback.error.base : window.percentRemaining <= 20 ? context.theme.text.feedback.warning.base : context.theme.text.muted },
-                      get children() { live.now; return formatSidebarWindow(window) },
+                    jsx("text", { selectable: false, attributes: TextAttributes.BOLD, fg: serviceOf(provider) === "kimi" ? context.theme.text.feedback.success.base : serviceOf(provider) === "copilot" ? context.theme.text.feedback.warning.base : context.theme.text.feedback.info.base, get children() { return `● ${provider.title}  ›` } }),
+                    Show({ get when() { return provider.account }, get children() { return jsx("text", { selectable: false, fg: context.theme.text.muted, wrapMode: "none", truncate: true, get children() { return provider.account ?? "" } }) } }),
+                    For({ get each() { return provider.windows }, children: (window: QuotaProviderView["windows"][number]) => jsx("box", {
+                      flexDirection: "column",
+                      children: [
+                        jsx("box", { flexDirection: "row", gap: 1, children: [
+                          jsx("text", { selectable: false, fg: context.theme.text.base, width: 12, wrapMode: "none", truncate: true, get children() { return window.label.replace(/-hour limit$/, "h").replace(/-day limit$/, "d").replace(/ limit$/, "") } }),
+                          jsx("text", { selectable: false, children: [
+                            jsx("span", { get style() { return { fg: window.percentRemaining <= 5 ? context.theme.text.feedback.error.base : window.percentRemaining <= 20 ? context.theme.text.feedback.warning.base : context.theme.text.feedback.success.base } }, get children() { return "━".repeat(Math.max(0, Math.min(8, Math.round(window.percentRemaining * 8 / 100)))) } }),
+                            jsx("span", { style: { fg: context.theme.text.muted }, get children() { return "─".repeat(8 - Math.max(0, Math.min(8, Math.round(window.percentRemaining * 8 / 100)))) } }),
+                          ] }),
+                          jsx("text", { selectable: false, get fg() { return window.percentRemaining <= 5 ? context.theme.text.feedback.error.base : window.percentRemaining <= 20 ? context.theme.text.feedback.warning.base : context.theme.text.feedback.success.base }, get children() { return `${window.percentRemaining}% left` } }),
+                        ] }),
+                        jsx("text", { selectable: false, fg: context.theme.text.muted, wrapMode: "none", truncate: true, get children() { live.now; return window.resetAt ? `  Reset in ${formatResetCountdown(new Date(window.resetAt).toISOString())}` : "  No reset time reported" } }),
+                      ],
                     }) }),
                   ],
                 }),
               }) }),
             }),
-            jsx("text", { fg: context.theme.text.muted, get children() { return live.data.errors.length ? `${live.data.errors.length} quota error(s) · /quota` : live.data.providers.length ? "Click account · F refresh in /quota" : "Connect account · /quota" } }),
+            jsx("text", { selectable: false, fg: context.theme.text.muted, get children() { return live.data.errors.length ? `${live.data.errors.length} quota error(s) · /quota` : live.data.providers.length ? "Click service to open · /quota" : "Connect account · /quota" } }),
           ],
         }) },
       }),
